@@ -152,6 +152,7 @@
             border-radius: 4px;
             margin: 15px 0;
             overflow: hidden;
+            cursor: pointer;
         }
         #progress {
             height: 100%;
@@ -248,7 +249,8 @@
         const nextBtn = document.getElementById('next');
         const audioPlayer = document.getElementById('audio-player');
         const currentSongDisplay = document.getElementById('current-song');
-        const progressBar = document.getElementById('progress');
+        const progressBar = document.getElementById('progress-bar');
+        const progress = document.getElementById('progress');
         const errorDisplay = document.getElementById('error');
         const visualizerCanvas = document.getElementById('visualizer');
         const canvasCtx = visualizerCanvas.getContext('2d');
@@ -259,6 +261,7 @@
         let isRepeating = false;
         let isPlaying = false;
         let audioCtx, analyser, source, bufferLength, dataArray;
+        let isDragging = false;
 
         // Initialize audio visualizer
         function initVisualizer() {
@@ -297,6 +300,47 @@
             }
             requestAnimationFrame(drawVisualizer);
         }
+
+        // Seek functionality
+        function seekAudio(event) {
+            const rect = progressBar.getBoundingClientRect();
+            const offsetX = event.clientX - rect.left;
+            const percentage = Math.max(0, Math.min(1, offsetX / rect.width));
+            if (audioPlayer.duration) {
+                audioPlayer.currentTime = percentage * audioPlayer.duration;
+                progress.style.width = `${percentage * 100}%`;
+            }
+        }
+
+        progressBar.addEventListener('mousedown', (e) => {
+            isDragging = true;
+            seekAudio(e);
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (isDragging) {
+                seekAudio(e);
+            }
+        });
+
+        document.addEventListener('mouseup', () => {
+            isDragging = false;
+        });
+
+        progressBar.addEventListener('touchstart', (e) => {
+            isDragging = true;
+            seekAudio(e.touches[0]);
+        });
+
+        document.addEventListener('touchmove', (e) => {
+            if (isDragging) {
+                seekAudio(e.touches[0]);
+            }
+        });
+
+        document.addEventListener('touchend', () => {
+            isDragging = false;
+        });
 
         // Check if webkitdirectory is supported
         if (!('webkitdirectory' in HTMLInputElement.prototype)) {
@@ -546,7 +590,7 @@
             isPlaying = false;
             playPauseBtn.textContent = 'Play';
             currentSongDisplay.textContent = 'No song playing';
-            progressBar.style.width = '0%';
+            progress.style.width = '0%';
             currentSongIndex = -1;
             if (audioCtx) audioCtx.suspend();
         }
@@ -554,9 +598,9 @@
         // Update progress bar
         function updateProgress() {
             audioPlayer.addEventListener('timeupdate', () => {
-                if (audioPlayer.duration) {
-                    const progress = (audioPlayer.currentTime / audioPlayer.duration) * 100;
-                    progressBar.style.width = `${progress}%`;
+                if (audioPlayer.duration && !isDragging) {
+                    const progressPercent = (audioPlayer.currentTime / audioPlayer.duration) * 100;
+                    progress.style.width = `${progressPercent}%`;
                 }
             });
         }
