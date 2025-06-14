@@ -1,0 +1,439 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Music Player</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f0f0f0;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        .container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            width: 600px;
+            max-width: 90%;
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+        }
+        input[type="file"] {
+            margin: 10px 0;
+        }
+        #song-list, #playlist {
+            max-height: 200px;
+            overflow-y: auto;
+            border: 1px solid #ccc;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+        .song-item, .playlist-song {
+            padding: 5px;
+            cursor: pointer;
+            user-select: none;
+        }
+        .song-item:hover, .playlist-song:hover {
+            background-color: #e0e0e0;
+        }
+        .song-item.selected {
+            background-color: #a0c4ff;
+        }
+        .controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 10px 0;
+        }
+        button {
+            padding: 10px 15px;
+            border: none;
+            border-radius: 5px;
+            background-color: #007bff;
+            color: white;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        #progress-bar {
+            width: 100%;
+            height: 5px;
+            background-color: #ddd;
+            margin: 10px 0;
+            position: relative;
+        }
+        #progress {
+            height: 100%;
+            background-color: #007bff;
+            width: 0;
+        }
+        #current-song {
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        #playlist-name {
+            width: 70%;
+            padding: 5px;
+            margin-right: 10px;
+        }
+        .error {
+            color: red;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Music Player</h1>
+        <input type="file" id="folder-input" webkitdirectory directory multiple accept="audio/*">
+        <div id="song-list"></div>
+        <div class="controls">
+            <button id="play-all">Play All</button>
+            <button id="play-selected">Play Selected</button>
+            <button id="add-to-playlist">Add to Playlist</button>
+        </div>
+        <input type="text" id="playlist-name" placeholder="Enter playlist name">
+        <button id="create-playlist">Create Playlist</button>
+        <div id="playlist"></div>
+        <div id="current-song">No song playing</div>
+        <div class="controls">
+            <button id="previous">Previous</button>
+            <button id="play-pause">Play</button>
+            <button id="stop">Stop</button>
+            <button id="next">Next</button>
+            <button id="replay">Replay</button>
+            <button id="repeat">Repeat: Off</button>
+        </div>
+        <div id="progress-bar">
+            <div id="progress"></div>
+        </div>
+        <audio id="audio-player"></audio>
+        <div id="error" class="error"></div>
+    </div>
+
+    <script>
+        const folderInput = document.getElementById('folder-input');
+        const songList = document.getElementById('song-list');
+        const playlist = document.getElementById('playlist');
+        const playAllBtn = document.getElementById('play-all');
+        const playSelectedBtn = document.getElementById('play-selected');
+        const addToPlaylistBtn = document.getElementById('add-to-playlist');
+        const createPlaylistBtn = document.getElementById('create-playlist');
+        const playlistNameInput = document.getElementById('playlist-name');
+        const playPauseBtn = document.getElementById('play-pause');
+        const replayBtn = document.getElementById('replay');
+        const repeatBtn = document.getElementById('repeat');
+        const previousBtn = document.getElementById('previous');
+        const stopBtn = document.getElementById('stop');
+        const nextBtn = document.getElementById('next');
+        const audioPlayer = document.getElementById('audio-player');
+        const currentSongDisplay = document.getElementById('current-song');
+        const progressBar = document.getElementById('progress');
+        const errorDisplay = document.getElementById('error');
+
+        let songs = [];
+        let currentPlaylist = [];
+        let currentSongIndex = -1;
+        let isRepeating = false;
+        let isPlaying = false;
+
+        // Check if webkitdirectory is supported
+        if (!('webkitdirectory' in HTMLInputElement.prototype)) {
+            showError('Your browser does not support folder selection. Try using Chrome or Edge.');
+        }
+
+        // Load songs from folder
+        folderInput.addEventListener('change', (e) => {
+            console.log('Files selected:', e.target.files);
+            songs = Array.from(e.target.files).filter(file => {
+                const validExtensions = /\.(mp3|wav|ogg|m4a|flac)$/i;
+                const validTypes = ['audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/mp4', 'audio/flac', 'audio/mp3'];
+                const isValid = validExtensions.test(file.name) || validTypes.includes(file.type);
+                console.log(`File: ${file.name}, Type: ${file.type}, Valid: ${isValid}`);
+                return isValid;
+            });
+            console.log('Filtered songs:', songs);
+            if (songs.length === 0) {
+                showError('No valid audio files found in the selected folder. Supported formats: MP3, WAV, OGG, M4A, FLAC.');
+                songList.innerHTML = '<p>No audio files found</p>';
+            } else {
+                displaySongs();
+            }
+        });
+
+        // Display songs in the song list
+        function displaySongs() {
+            songList.innerHTML = '';
+            songs.forEach((song, index) => {
+                const div = document.createElement('div');
+                div.className = 'song-item';
+                div.textContent = song.name;
+                div.dataset.index = index;
+                div.addEventListener('click', () => {
+                    div.classList.toggle('selected');
+                });
+                songList.appendChild(div);
+            });
+            console.log('Songs displayed:', songs.length);
+        }
+
+        // Play all songs
+        playAllBtn.addEventListener('click', () => {
+            if (songs.length === 0) {
+                showError('No songs loaded');
+                return;
+            }
+            currentPlaylist = songs.map((_, index) => index);
+            currentSongIndex = 0;
+            playSong(songs[currentPlaylist[currentSongIndex]]);
+        });
+
+        // Play selected songs
+        playSelectedBtn.addEventListener('click', () => {
+            const selected = Array.from(songList.querySelectorAll('.selected')).map(div => parseInt(div.dataset.index));
+            if (selected.length === 0) {
+                showError('No songs selected');
+                return;
+            }
+            currentPlaylist = selected;
+            currentSongIndex = 0;
+            playSong(songs[currentPlaylist[currentSongIndex]]);
+        });
+
+        // Create playlist
+        createPlaylistBtn.addEventListener('click', () => {
+            const name = playlistNameInput.value.trim();
+            if (!name) {
+                showError('Please enter a playlist name');
+                return;
+            }
+            const selected = Array.from(songList.querySelectorAll('.selected')).map(div => parseInt(div.dataset.index));
+            if (selected.length === 0) {
+                showError('No songs selected for playlist');
+                return;
+            }
+            displayPlaylist(name, selected);
+            playlistNameInput.value = '';
+        });
+
+        // Add to existing playlist
+        addToPlaylistBtn.addEventListener('click', () => {
+            const selected = Array.from(songList.querySelectorAll('.selected')).map(div => parseInt(div.dataset.index));
+            if (selected.length === 0) {
+                showError('No songs selected');
+                return;
+            }
+            const name = playlistNameInput.value.trim() || 'Default Playlist';
+            displayPlaylist(name, selected);
+        });
+
+        // Display playlist
+        function displayPlaylist(name, songIndices) {
+            let playlistDiv = Array.from(playlist.children).find(div => div.firstChild.textContent === name);
+            if (!playlistDiv) {
+                playlistDiv = document.createElement('div');
+                playlistDiv.innerHTML = `<strong>${name}</strong>`;
+                playlist.appendChild(playlistDiv);
+            }
+            songIndices.forEach(index => {
+                const songDiv = document.createElement('div');
+                songDiv.className = 'playlist-song';
+                songDiv.textContent = songs[index].name;
+                songDiv.dataset.index = index;
+                songDiv.addEventListener('click', () => {
+                    currentPlaylist = songIndices;
+                    currentSongIndex = songIndices.indexOf(index);
+                    playSong(songs[index]);
+                });
+                const removeBtn = document.createElement('button');
+                removeBtn.textContent = 'Remove';
+                removeBtn.style.marginLeft = '10px';
+                removeBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    songIndices.splice(songIndices.indexOf(index), 1);
+                    songDiv.remove();
+                    if (songIndices.length === 0) {
+                        playlistDiv.remove();
+                    }
+                    if (currentPlaylist === songIndices && currentSongIndex >= songIndices.length) {
+                        currentSongIndex = songIndices.length - 1;
+                        if (currentSongIndex < 0) {
+                            currentSongDisplay.textContent = 'No song playing';
+                            isPlaying = false;
+                            playPauseBtn.textContent = 'Play';
+                            audioPlayer.src = '';
+                        }
+                    }
+                });
+                songDiv.appendChild(removeBtn);
+                playlistDiv.appendChild(songDiv);
+            });
+        }
+
+        // Play a song
+        function playSong(song) {
+            if (!song) return;
+            const url = URL.createObjectURL(song);
+            audioPlayer.src = url;
+            audioPlayer.play().catch(err => {
+                showError('Error playing song: ' + err.message);
+                console.error('Playback error:', err);
+            });
+            isPlaying = true;
+            playPauseBtn.textContent = 'Pause';
+            currentSongDisplay.textContent = `Playing: ${song.name}`;
+            updateProgress();
+        }
+
+        // Play/pause toggle
+        playPauseBtn.addEventListener('click', () => {
+            if (isPlaying) {
+                audioPlayer.pause();
+                playPauseBtn.textContent = 'Play';
+                isPlaying = false;
+            } else if (audioPlayer.src) {
+                audioPlayer.play().catch(err => {
+                    showError('Error playing song: ' + err.message);
+                    console.error('Playback error:', err);
+                });
+                playPauseBtn.textContent = 'Pause';
+                isPlaying = true;
+            }
+        });
+
+        // Replay current song
+        replayBtn.addEventListener('click', () => {
+            if (currentSongIndex >= 0) {
+                playSong(songs[currentPlaylist[currentSongIndex]]);
+            }
+        });
+
+        // Toggle repeat
+        repeatBtn.addEventListener('click', () => {
+            isRepeating = !isRepeating;
+            repeatBtn.textContent = `Repeat: ${isRepeating ? 'On' : 'Off'}`;
+            audioPlayer.loop = isRepeating;
+        });
+
+        // Previous song
+        previousBtn.addEventListener('click', () => {
+            if (currentSongIndex > 0) {
+                currentSongIndex--;
+                playSong(songs[currentPlaylist[currentSongIndex]]);
+            } else {
+                stopPlayback();
+            }
+        });
+
+        // Stop playback
+        stopBtn.addEventListener('click', () => {
+            stopPlayback();
+        });
+
+        // Next song
+        nextBtn.addEventListener('click', () => {
+            if (currentSongIndex < currentPlaylist.length - 1) {
+                currentSongIndex++;
+                playSong(songs[currentPlaylist[currentSongIndex]]);
+            } else {
+                stopPlayback();
+            }
+        });
+
+        // Stop playback function
+        function stopPlayback() {
+            audioPlayer.pause();
+            audioPlayer.src = '';
+            isPlaying = false;
+            playPauseBtn.textContent = 'Play';
+            currentSongDisplay.textContent = 'No song playing';
+            progressBar.style.width = '0%';
+            currentSongIndex = -1;
+        }
+
+        // Update progress bar
+        function updateProgress() {
+            audioPlayer.addEventListener('timeupdate', () => {
+                if (audioPlayer.duration) {
+                    const progress = (audioPlayer.currentTime / audioPlayer.duration) * 100;
+                    progressBar.style.width = `${progress}%`;
+                }
+            });
+        }
+
+        // Play next song when current song ends
+        audioPlayer.addEventListener('ended', () => {
+            if (!isRepeating) {
+                currentSongIndex++;
+                if (currentSongIndex < currentPlaylist.length) {
+                    playSong(songs[currentPlaylist[currentSongIndex]]);
+                } else {
+                    stopPlayback();
+                }
+            }
+        });
+
+        // Show error message
+        function showError(message) {
+            errorDisplay.textContent = message;
+            setTimeout(() => errorDisplay.textContent = '', 5000);
+            console.error('Error displayed:', message);
+        }
+    </script>
+</body>
+</html>
