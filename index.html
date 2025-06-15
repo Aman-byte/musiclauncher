@@ -17,14 +17,13 @@
             color: #e0e0ff;
             display: flex;
             justify-content: center;
-            align-items: center;
             min-height: 100vh;
             padding: 20px;
             position: relative;
-            overflow: hidden;
+            overflow-y: auto; /* Enable vertical scrolling */
         }
         #background-canvas {
-            position: absolute;
+            position: fixed; /* Fixed to stay behind content */
             top: 0;
             left: 0;
             width: 100%;
@@ -39,6 +38,7 @@
             border-radius: 10px;
             width: 700px;
             max-width: 95%;
+            margin: 20px auto; /* Center horizontally, add vertical margin */
             position: relative;
             z-index: 1;
         }
@@ -480,7 +480,7 @@
                 playFromHereBtn.className = 'play-from-here-btn';
                 playFromHereBtn.textContent = 'Play From Here';
                 playFromHereBtn.addEventListener('click', (e) => {
-                    e.stopPropagation(); // Prevent song selection
+                    e.stopPropagation();
                     const startIndex = parseInt(div.dataset.index);
                     currentPlaylist = Array.from({length: songs.length - startIndex}, (_, i) => startIndex + i);
                     currentSongIndex = 0;
@@ -490,7 +490,7 @@
                 div.appendChild(playFromHereBtn);
 
                 div.addEventListener('click', (e) => {
-                    if (e.target !== playFromHereBtn) { // Allow clicking song name for selection
+                    if (e.target !== playFromHereBtn) {
                         const idx = parseInt(div.dataset.index);
                         if (div.classList.toggle('selected')) {
                             if (!selectionOrder.includes(idx)) {
