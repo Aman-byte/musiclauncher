@@ -99,6 +99,9 @@
             box-shadow: 0 0 10px #9b00ff;
         }
         .song-item, .playlist-song {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
             padding: 10px;
             border-radius: 5px;
             transition: background 0.2s, transform 0.2s, box-shadow 0.2s;
@@ -112,6 +115,22 @@
             background: linear-gradient(90deg, #ff007a, #00eaff);
             color: #fff;
             text-shadow: 0 0 5px #9b00ff;
+        }
+        .play-from-here-btn {
+            padding: 5px 10px;
+            font-size: 0.8rem;
+            background: linear-gradient(90deg, #ff007a, #00eaff);
+            border: 1px solid #9b00ff;
+            border-radius: 5px;
+            color: #fff;
+            font-family: 'Orbitron', sans-serif;
+            cursor: pointer;
+            text-shadow: 0 0 3px #9b00ff;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .play-from-here-btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 10px #00eaff;
         }
         .controls {
             display: flex;
@@ -264,15 +283,13 @@
                     size: Math.random() * 3 + 1,
                     speedX: (Math.random() - 0.5) * 0.5,
                     speedY: (Math.random() - 0.5) * 0.5,
-                    color: `hsl(${Math.random() * 60 + 300}, 100%, 50%)` // Neon pink-purple range
+                    color: `hsl(${Math.random() * 60 + 300}, 100%, 50%)`
                 });
             }
         }
 
         function drawBackground() {
             bgCtx.clearRect(0, 0, bgCanvas.width, bgCanvas.height);
-            
-            // Draw perspective grid
             bgCtx.strokeStyle = 'rgba(0, 234, 255, 0.2)';
             bgCtx.lineWidth = 1;
             const centerX = bgCanvas.width / 2;
@@ -290,8 +307,6 @@
                 bgCtx.lineTo(bgCanvas.width, y);
                 bgCtx.stroke();
             }
-
-            // Draw particles
             particles.forEach(p => {
                 bgCtx.fillStyle = p.color;
                 bgCtx.beginPath();
@@ -302,12 +317,9 @@
                 if (p.x < 0 || p.x > bgCanvas.width) p.speedX *= -1;
                 if (p.y < 0 || p.y > bgCanvas.height) p.speedY *= -1;
             });
-
-            // Draw scanlines
             bgCtx.fillStyle = 'rgba(255, 0, 122, 0.1)';
             bgCtx.fillRect(0, scanlineY, bgCanvas.width, 5);
             scanlineY = (scanlineY + 2) % bgCanvas.height;
-
             requestAnimationFrame(drawBackground);
         }
 
@@ -458,18 +470,37 @@
             songs.forEach((song, index) => {
                 const div = document.createElement('div');
                 div.className = 'song-item';
-                div.textContent = song.name;
+                const songNameSpan = document.createElement('span');
+                songNameSpan.textContent = song.name;
+                div.appendChild(songNameSpan);
                 div.dataset.index = index;
-                div.addEventListener('click', () => {
-                    const idx = parseInt(div.dataset.index);
-                    if (div.classList.toggle('selected')) {
-                        if (!selectionOrder.includes(idx)) {
-                            selectionOrder.push(idx);
+
+                // Play From Here button
+                const playFromHereBtn = document.createElement('button');
+                playFromHereBtn.className = 'play-from-here-btn';
+                playFromHereBtn.textContent = 'Play From Here';
+                playFromHereBtn.addEventListener('click', (e) => {
+                    e.stopPropagation(); // Prevent song selection
+                    const startIndex = parseInt(div.dataset.index);
+                    currentPlaylist = Array.from({length: songs.length - startIndex}, (_, i) => startIndex + i);
+                    currentSongIndex = 0;
+                    console.log(`Play from here: Song ${song.name}, Playlist:`, currentPlaylist);
+                    playSong(songs[currentPlaylist[currentSongIndex]]);
+                });
+                div.appendChild(playFromHereBtn);
+
+                div.addEventListener('click', (e) => {
+                    if (e.target !== playFromHereBtn) { // Allow clicking song name for selection
+                        const idx = parseInt(div.dataset.index);
+                        if (div.classList.toggle('selected')) {
+                            if (!selectionOrder.includes(idx)) {
+                                selectionOrder.push(idx);
+                            }
+                        } else {
+                            selectionOrder = selectionOrder.filter(i => i !== idx);
                         }
-                    } else {
-                        selectionOrder = selectionOrder.filter(i => i !== idx);
+                        console.log('Selection order:', selectionOrder);
                     }
-                    console.log('Selection order:', selectionOrder);
                 });
                 songList.appendChild(div);
             });
