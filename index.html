@@ -21,23 +21,15 @@
             min-height: 100vh;
             padding: 20px;
             position: relative;
-            overflow-x: hidden;
+            overflow: hidden;
         }
-        body::before {
-            content: '';
+        #background-canvas {
             position: absolute;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
-            background: repeating-linear-gradient(
-                0deg,
-                transparent,
-                transparent 10px,
-                rgba(255, 0, 122, 0.1) 10px,
-                rgba(255, 0, 122, 0.1) 11px
-            );
-            z-index: -1;
+            z-index: -2;
         }
         .container {
             background: rgba(0, 0, 0, 0.7);
@@ -48,6 +40,7 @@
             width: 700px;
             max-width: 95%;
             position: relative;
+            z-index: 1;
         }
         h1 {
             text-align: center;
@@ -56,13 +49,27 @@
             margin-bottom: 20px;
             text-shadow: 0 0 10px #00eaff, 0 0 20px #ff007a;
         }
+        .file-input-wrapper {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 20px;
+            gap: 10px;
+        }
+        .file-input-label {
+            color: #ff007a;
+            font-weight: 700;
+            text-shadow: 0 0 5px #ff007a;
+            transition: transform 0.2s, text-shadow 0.2s;
+        }
+        .file-input-label:hover {
+            transform: scale(1.05);
+            text-shadow: 0 0 10px #ff007a;
+        }
         input[type="file"] {
-            display: block;
-            margin: 0 auto 20px;
-            padding: 10px;
-            background: rgba(0, 0, 0, 0.5);
-            border: 2px solid #00eaff;
-            border-radius: 5px;
+            display: inline-block;
+            background: transparent;
+            border: none;
             color: #e0e0ff;
             cursor: pointer;
         }
@@ -201,9 +208,13 @@
     </style>
 </head>
 <body>
+    <canvas id="background-canvas"></canvas>
     <div class="container">
         <h1>VibeVault</h1>
-        <input type="file" id="folder-input" webkitdirectory directory multiple accept="audio/*,video/mp4">
+        <div class="file-input-wrapper">
+            <span class="file-input-label">Select Music Folder</span>
+            <input type="file" id="folder-input" webkitdirectory directory multiple accept="audio/*,video/mp4">
+        </div>
         <div id="song-list"></div>
         <div class="controls">
             <button id="play-all">Play All</button>
@@ -232,6 +243,79 @@
     </div>
 
     <script>
+        // Background animation
+        const bgCanvas = document.getElementById('background-canvas');
+        const bgCtx = bgCanvas.getContext('2d');
+        let particles = [];
+        let scanlineY = 0;
+
+        function resizeBackground() {
+            bgCanvas.width = window.innerWidth;
+            bgCanvas.height = window.innerHeight;
+            initParticles();
+        }
+
+        function initParticles() {
+            particles = [];
+            for (let i = 0; i < 50; i++) {
+                particles.push({
+                    x: Math.random() * bgCanvas.width,
+                    y: Math.random() * bgCanvas.height,
+                    size: Math.random() * 3 + 1,
+                    speedX: (Math.random() - 0.5) * 0.5,
+                    speedY: (Math.random() - 0.5) * 0.5,
+                    color: `hsl(${Math.random() * 60 + 300}, 100%, 50%)` // Neon pink-purple range
+                });
+            }
+        }
+
+        function drawBackground() {
+            bgCtx.clearRect(0, 0, bgCanvas.width, bgCanvas.height);
+            
+            // Draw perspective grid
+            bgCtx.strokeStyle = 'rgba(0, 234, 255, 0.2)';
+            bgCtx.lineWidth = 1;
+            const centerX = bgCanvas.width / 2;
+            const horizonY = bgCanvas.height * 0.3;
+            const gridSpacing = 50;
+            for (let x = -bgCanvas.width; x <= bgCanvas.width; x += gridSpacing) {
+                bgCtx.beginPath();
+                bgCtx.moveTo(centerX + x, horizonY);
+                bgCtx.lineTo(centerX + x * 2, bgCanvas.height);
+                bgCtx.stroke();
+            }
+            for (let y = horizonY; y <= bgCanvas.height; y += gridSpacing) {
+                bgCtx.beginPath();
+                bgCtx.moveTo(0, y);
+                bgCtx.lineTo(bgCanvas.width, y);
+                bgCtx.stroke();
+            }
+
+            // Draw particles
+            particles.forEach(p => {
+                bgCtx.fillStyle = p.color;
+                bgCtx.beginPath();
+                bgCtx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                bgCtx.fill();
+                p.x += p.speedX;
+                p.y += p.speedY;
+                if (p.x < 0 || p.x > bgCanvas.width) p.speedX *= -1;
+                if (p.y < 0 || p.y > bgCanvas.height) p.speedY *= -1;
+            });
+
+            // Draw scanlines
+            bgCtx.fillStyle = 'rgba(255, 0, 122, 0.1)';
+            bgCtx.fillRect(0, scanlineY, bgCanvas.width, 5);
+            scanlineY = (scanlineY + 2) % bgCanvas.height;
+
+            requestAnimationFrame(drawBackground);
+        }
+
+        window.addEventListener('resize', resizeBackground);
+        resizeBackground();
+        drawBackground();
+
+        // Main app logic
         const folderInput = document.getElementById('folder-input');
         const songList = document.getElementById('song-list');
         const playlist = document.getElementById('playlist');
@@ -262,6 +346,7 @@
         let isPlaying = false;
         let audioCtx, analyser, source, bufferLength, dataArray;
         let isDragging = false;
+        let selectionOrder = [];
 
         // Initialize audio visualizer
         function initVisualizer() {
@@ -369,13 +454,22 @@
         // Display songs in the song list
         function displaySongs() {
             songList.innerHTML = '';
+            selectionOrder = [];
             songs.forEach((song, index) => {
                 const div = document.createElement('div');
                 div.className = 'song-item';
                 div.textContent = song.name;
                 div.dataset.index = index;
                 div.addEventListener('click', () => {
-                    div.classList.toggle('selected');
+                    const idx = parseInt(div.dataset.index);
+                    if (div.classList.toggle('selected')) {
+                        if (!selectionOrder.includes(idx)) {
+                            selectionOrder.push(idx);
+                        }
+                    } else {
+                        selectionOrder = selectionOrder.filter(i => i !== idx);
+                    }
+                    console.log('Selection order:', selectionOrder);
                 });
                 songList.appendChild(div);
             });
@@ -386,6 +480,8 @@
         deselectAllBtn.addEventListener('click', () => {
             const selectedSongs = songList.querySelectorAll('.song-item.selected');
             selectedSongs.forEach(song => song.classList.remove('selected'));
+            selectionOrder = [];
+            console.log('Selection order cleared:', selectionOrder);
         });
 
         // Play all songs
@@ -401,12 +497,11 @@
 
         // Play selected songs
         playSelectedBtn.addEventListener('click', () => {
-            const selected = Array.from(songList.querySelectorAll('.selected')).map(div => parseInt(div.dataset.index));
-            if (selected.length === 0) {
+            if (selectionOrder.length === 0) {
                 showError('No songs selected');
                 return;
             }
-            currentPlaylist = selected;
+            currentPlaylist = [...selectionOrder];
             currentSongIndex = 0;
             playSong(songs[currentPlaylist[currentSongIndex]]);
         });
@@ -418,24 +513,22 @@
                 showError('Please enter a playlist name');
                 return;
             }
-            const selected = Array.from(songList.querySelectorAll('.selected')).map(div => parseInt(div.dataset.index));
-            if (selected.length === 0) {
+            if (selectionOrder.length === 0) {
                 showError('No songs selected for playlist');
                 return;
             }
-            displayPlaylist(name, selected);
+            displayPlaylist(name, [...selectionOrder]);
             playlistNameInput.value = '';
         });
 
         // Add to existing playlist
         addToPlaylistBtn.addEventListener('click', () => {
-            const selected = Array.from(songList.querySelectorAll('.selected')).map(div => parseInt(div.dataset.index));
-            if (selected.length === 0) {
+            if (selectionOrder.length === 0) {
                 showError('No songs selected');
                 return;
             }
             const name = playlistNameInput.value.trim() || 'Default Playlist';
-            displayPlaylist(name, selected);
+            displayPlaylist(name, [...selectionOrder]);
         });
 
         // Display playlist
@@ -463,11 +556,9 @@
                 playlistDiv.appendChild(headerDiv);
                 playlist.appendChild(playlistDiv);
             }
-            // Get existing song names in the playlist
             const existingSongNames = Array.from(playlistDiv.querySelectorAll('.playlist-song')).map(div => div.textContent.split('Remove')[0].trim());
             songIndices.forEach(index => {
                 const songName = songs[index].name;
-                // Skip if song already exists in the playlist
                 if (existingSongNames.includes(songName)) {
                     console.log(`Skipping duplicate song: ${songName}`);
                     return;
@@ -503,6 +594,7 @@
                 });
                 songDiv.appendChild(removeBtn);
                 playlistDiv.appendChild(songDiv);
+                existingSongNames.push(songName);
             });
         }
 
@@ -555,13 +647,15 @@
         repeatBtn.addEventListener('click', () => {
             isRepeating = !isRepeating;
             repeatBtn.textContent = `Repeat: ${isRepeating ? 'On' : 'Off'}`;
-            audioPlayer.loop = isRepeating;
         });
 
         // Previous song
         previousBtn.addEventListener('click', () => {
             if (currentSongIndex > 0) {
                 currentSongIndex--;
+                playSong(songs[currentPlaylist[currentSongIndex]]);
+            } else if (isRepeating && currentPlaylist.length > 1) {
+                currentSongIndex = currentPlaylist.length - 1;
                 playSong(songs[currentPlaylist[currentSongIndex]]);
             } else {
                 stopPlayback();
@@ -577,6 +671,9 @@
         nextBtn.addEventListener('click', () => {
             if (currentSongIndex < currentPlaylist.length - 1) {
                 currentSongIndex++;
+                playSong(songs[currentPlaylist[currentSongIndex]]);
+            } else if (isRepeating && currentPlaylist.length > 1) {
+                currentSongIndex = 0;
                 playSong(songs[currentPlaylist[currentSongIndex]]);
             } else {
                 stopPlayback();
@@ -607,13 +704,14 @@
 
         // Play next song when current song ends
         audioPlayer.addEventListener('ended', () => {
-            if (!isRepeating) {
+            if (isRepeating) {
+                currentSongIndex = (currentSongIndex + 1) % currentPlaylist.length;
+                playSong(songs[currentPlaylist[currentSongIndex]]);
+            } else if (currentSongIndex < currentPlaylist.length - 1) {
                 currentSongIndex++;
-                if (currentSongIndex < currentPlaylist.length) {
-                    playSong(songs[currentPlaylist[currentSongIndex]]);
-                } else {
-                    stopPlayback();
-                }
+                playSong(songs[currentPlaylist[currentSongIndex]]);
+            } else {
+                stopPlayback();
             }
         });
 
